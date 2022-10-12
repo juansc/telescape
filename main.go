@@ -33,38 +33,53 @@ func main() {
 }
 
 func handleConnection(conn *UserConnection) error {
-	var err error
 	conn.Send(IntroString())
 	conn.Prompt()
 	r := bufio.NewReader(conn.conn)
-	data, err := r.ReadString('\n')
-	if err != nil {
-		return err
-	}
-
 	for {
-		out, _ := handleInput(data)
-		if err := conn.Send(out); err == nil {
+		data, err := r.ReadString('\n')
+		if err != nil {
 			return err
 		}
+		data = strings.TrimSpace(data)
+		if data == "" {
+			conn.Prompt()
+			continue
+		}
+		out := handleInput(data)
+		if out.do != nil {
+			if err := out.do(); err != nil {
+				return fmt.Errorf("error %w. Simply tragic...", err)
+			}
+		}
+		if err := conn.Send(out.message); err != nil {
+			return err
+		}
+		conn.Prompt()
 	}
 	return nil
 }
 
-func handleInput(in string) (string, error) {
-	cleanIn := strings.TrimSpace(in)
-	switch strings.ToLower(cleanIn) {
+func handleInput(in string) action {
+	switch strings.ToLower(in) {
 	case "l", "look":
-		return "You take a look around your current room. It is empty. You should quit.\n", nil
+		return action{
+			message: "You take a look around your current room. It is empty. You should quit.",
+		}
 	case "i", "inspect":
-		return "You must specify what you want to inspect.\n", nil
+		return action{message: "You must specify what you want to inspect."}
 	case "u", "use":
-		return "You must specify what you want to use.\n", nil
+		return action{message: "You must specify what you want to use."}
 	case "q", "quit":
-		return "Quitter!!!\n", nil
+		return action{message: "Quitter!", do: func() error { return fmt.Errorf("we gotta a quitter") }}
 	default:
-		return fmt.Sprintf("I don't know what %s that is.\n", in), fmt.Errorf("got command I cannot handle")
+		return action{message: fmt.Sprintf("I don't know what '%s' is.", in)}
 	}
+}
+
+type action struct {
+	do      func() error
+	message string
 }
 
 // On user input, the command should
