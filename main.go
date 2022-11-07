@@ -2,12 +2,18 @@ package main
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"net"
+	"os"
 	"strings"
+	"time"
 )
 
 func main() {
+	// Start engine here and start the loop
+
+	// Start the tcp lisener
 	listener, err := net.Listen("tcp", "localhost:2000")
 	if err != nil {
 		fmt.Println("error listening on TCP port", err)
@@ -19,45 +25,14 @@ func main() {
 
 	fmt.Println("waiting to accept connections...")
 	for {
+		fmt.Println("waiting for next connection")
 		conn, err := listener.Accept()
 		if err != nil {
 			fmt.Println("error listening on accepting connection", err)
 		}
-		userConn := UserConnection{conn: conn}
-		if err := handleConnection(&userConn); err != nil {
-			fmt.Println("error handling connection", err)
-		}
-
-		conn.Close()
+		fmt.Println("got a connection")
+		_, _ = NewUserConnection(conn)
 	}
-}
-
-func handleConnection(conn *UserConnection) error {
-	conn.Send(IntroString())
-	conn.Prompt()
-	r := bufio.NewReader(conn.conn)
-	for {
-		data, err := r.ReadString('\n')
-		if err != nil {
-			return err
-		}
-		data = strings.TrimSpace(data)
-		if data == "" {
-			conn.Prompt()
-			continue
-		}
-		out := handleInput(data)
-		if out.do != nil {
-			if err := out.do(); err != nil {
-				return fmt.Errorf("error %w. Simply tragic...", err)
-			}
-		}
-		if err := conn.Send(out.message); err != nil {
-			return err
-		}
-		conn.Prompt()
-	}
-	return nil
 }
 
 func handleInput(in string) action {
@@ -118,7 +93,75 @@ func IntroString() string {
 }
 
 type UserConnection struct {
-	conn net.Conn
+	conn     net.Conn
+	close    chan struct{}
+	messages chan string
+	isClosed bool
+}
+
+func NewUserConnection(conn net.Conn) (*UserConnection, error) {
+	userConn := UserConnection{
+		conn:     conn,
+		close:    make(chan struct{}, 1),
+		messages: make(chan string, 100),
+	}
+	go userConn.loop()
+	go userConn.msgLoop()
+	return &userConn, nil
+}
+
+func (u *UserConnection) msgLoop() {
+	for {
+		select {
+		case <-u.close:
+			return
+		case msg := <-u.messages:
+			u.Send(msg)
+			u.Prompt()
+		}
+	}
+}
+
+func (u *UserConnection) shutdown() {
+	u.isClosed = true
+	u.Send("Goodbye!")
+	close(u.close)
+	u.conn.Close()
+}
+
+func (u *UserConnection) loop() {
+	u.Send(IntroString())
+	u.Prompt()
+	defer u.shutdown()
+	r := bufio.NewReader(u.conn)
+	for {
+		u.conn.SetDeadline(time.Now().Add(time.Second * 1))
+		data, err := r.ReadString('\n')
+		if err != nil {
+			if errors.Is(err, os.ErrDeadlineExceeded) {
+				continue
+			}
+			return
+		}
+		if u.isClosed {
+			return
+		}
+		data = strings.TrimSpace(data)
+		// If the user sent only white space then just render the prompt again
+		if data == "" {
+			u.Prompt()
+			continue
+		}
+		msg, err := parseEvent(data)
+		if err != nil {
+			u.messages <- err.Error()
+			continue
+		}
+		if msg.EventType == "quit" {
+			return
+		}
+		u.messages <- msg.Message
+	}
 }
 
 func (u *UserConnection) Send(line string) error {
@@ -129,4 +172,25 @@ func (u *UserConnection) Send(line string) error {
 func (u *UserConnection) Prompt() error {
 	_, err := u.conn.Write([]byte(">"))
 	return err
+}
+
+// parseEvent takes in a string and parses the event.
+func parseEvent(in string) (Event, error) {
+	if len(in) > 50 {
+		return Event{}, fmt.Errorf("your message is too long")
+	}
+	parts := strings.Split(in, " ")
+	cmd := parts[0]
+	switch cmd {
+	case "l", "look":
+		return Event{
+			EventType: "look",
+		}, nil
+	case "q", "quit":
+		return Event{
+			EventType: "quit",
+		}, nil
+	default:
+		return Event{}, fmt.Errorf("I don't know what '%s' is", in)
+	}
 }
