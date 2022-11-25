@@ -1,0 +1,19 @@
+1. Add support for basic chatting. We're almost done, but we need to remove the functionality that renders the prompts
+   since we assume that they'll be using Mudlet.
+2. Add support for movement across rooms. This means that a player can have a current room. They can see the rooms available
+   via movement (this should live in the room description) and they can attempt to update their room by specifying a movement.
+   Note that it is only required to move into a room that exists and fail to move to a room that doesn't exist or the player 
+   does not have access. Note that players are not notified of player movements.
+3. Add support for items and a player inventory. The game should spawn with multiple items. Some items are fixed (like a fountain)
+   and are not inventory-supported. Some items can go into inventory. A player can take an item from a room or drop it. Taking an item
+   should remove it from the room description. Note that players are not notified of item statuses. An item should have a description,
+   an owner OR a location. It also has a state.
+4. Add support for using items. An item being used will emit an action such as revealing a description to a player, it can attempt
+   to resolve a lock, or an update it's state. The following uses are supported: using a key means it will attempt to open a lock.
+   Using a shift cipher updates the shift amount. Using the decoder (separate from cipher) will translate a text using the cipher.
+   Using a pressure plate will turn it on. Note that a person will no longer use an item if they leave the location, so a person
+   leaving a room will unuse a pressure plate. An item may have an UNUSE action, which means it may reset its state after it has 
+   stopped being used. 
+5. Add support for locations. A room will have many locations, and locations may contain items. A location has the condition that
+   that only a single player may inhabit a location at a time. Note that a room has the ZERO location or the none-location 
+   that signifies being in the center of the room and not in a particular location.

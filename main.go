@@ -19,7 +19,7 @@ func main() {
 		listener.Close()
 	}()
 
-	nameGenerator := NewNameGen([]string{"Explorer", "Architect", "Thief", "Charlatan"})
+	nameGenerator := NewNameGen([]string{RoleExplorer, RoleArchitect, RoleThief, RoleCharlatan})
 
 	fmt.Println("waiting to accept connections...")
 	for {

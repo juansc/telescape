@@ -36,7 +36,7 @@ type Engine struct {
 func NewEngine() *Engine {
 	engine := Engine{
 		players: []*Player{},
-		Ticker:  *time.NewTicker(time.Millisecond * 100),
+		Ticker:  *time.NewTicker(time.Millisecond * 10),
 		events:  []Event{},
 		close:   make(chan struct{}),
 	}
@@ -57,9 +57,15 @@ func (engine *Engine) Tick() {
 			return
 		case <-engine.Ticker.C:
 			engine.mu.Lock()
+			// handle and resolve all events
 			for i := range engine.events {
 				engine.handleEvent(engine.events[i])
 			}
+			// flush messages for all players
+			for i := range engine.players {
+				engine.players[i].conn.FlushMessages()
+			}
+			// empty out the events for the next loop
 			engine.events = []Event{}
 			engine.mu.Unlock()
 		}
@@ -71,6 +77,20 @@ func (engine *Engine) addEvent(event Event) {
 	engine.events = append(engine.events, event)
 	engine.mu.Unlock()
 }
+
+var playerColors = map[string]string{
+	RoleArchitect: "yellow",
+	RoleExplorer:  "green",
+	RoleThief:     "blue",
+	RoleCharlatan: "magenta",
+}
+
+const (
+	RoleExplorer  = "Explorer"
+	RoleArchitect = "Architect"
+	RoleThief     = "Thief"
+	RoleCharlatan = "Charlatan"
+)
 
 func (engine *Engine) handleEvent(event Event) {
 	if event.EventType == "talk" {
@@ -84,11 +104,9 @@ func (engine *Engine) handleEvent(event Event) {
 		msg := fmt.Sprintf("\n[%s]: %s", event.Source, event.Message)
 		for i, p := range engine.players {
 			if _, ok := audienceMap[p.conn.playerID]; ok || toAll && p.conn.playerID != event.Source {
-				fmt.Println("message is going to ", p)
-				engine.players[i].conn.messages <- "[1;34m" + msg + "[1;37m"
-			}
-			if p.conn.playerID == event.Source {
-				engine.players[i].conn.messages <- ""
+				// TODO: Make the color specific to the source. For example, all messages originating from
+				// the game are white. All messages coming from the Architect are yellow.
+				engine.players[i].conn.SendColor(msg, playerColors[event.Source])
 			}
 		}
 
@@ -98,7 +116,7 @@ func (engine *Engine) handleEvent(event Event) {
 	if event.EventType == "look" {
 		for i, p := range engine.players {
 			if p.Name == event.Requester {
-				engine.players[i].conn.messages <- NewFountainRoom().Describe()
+				engine.players[i].conn.Send(NewFountainRoom().Describe())
 				return
 			}
 		}

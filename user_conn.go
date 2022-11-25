@@ -7,44 +7,58 @@ import (
 	"net"
 	"os"
 	"strings"
+	"sync"
 	"time"
 )
 
 type UserConnection struct {
-	conn     net.Conn
-	playerID string
-	close    chan struct{}
-	messages chan string
-	isClosed bool
-	engine   *Engine
+	conn        net.Conn
+	playerID    string
+	close       chan struct{}
+	isClosed    bool
+	engine      *Engine
+	mu          sync.Mutex
+	outMessages []string
 }
 
 func NewUserConnection(conn net.Conn, engine *Engine) (*UserConnection, error) {
 	userConn := UserConnection{
-		conn:     conn,
-		close:    make(chan struct{}, 1),
-		messages: make(chan string, 100),
-		engine:   engine,
+		conn:   conn,
+		close:  make(chan struct{}, 1),
+		engine: engine,
 	}
 	return &userConn, nil
 }
 
 func (u *UserConnection) start() {
 	go u.loop()
-	go u.msgLoop()
 }
 
-// msgLoop writes messages to the user witht their connection.
-func (u *UserConnection) msgLoop() {
-	for {
-		select {
-		case <-u.close:
-			return
-		case msg := <-u.messages:
-			u.Send(msg)
-			u.Prompt()
-		}
+// fastSend immediately sends a message to the user, skipping the buffer that gets flushed periodically.
+// It should be for fast fail scenarios like parsing errors.
+func (u *UserConnection) fastSend(line string) error {
+	u.mu.Lock()
+	_, _ = u.conn.Write([]byte(line + "\n"))
+	_, _ = u.conn.Write([]byte(">"))
+	u.mu.Unlock()
+	return nil
+}
+
+func (u *UserConnection) FlushMessages() error {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	// Nothing to do, don't even bother redrawing the prompt.
+	if len(u.outMessages) == 0 {
+		return nil
 	}
+	// Send a carriage return to push everything before the person's current buffer
+	for _, msg := range u.outMessages {
+		// TODO: Handle errors here
+		u.send(msg)
+	}
+	u.Prompt()
+	u.outMessages = []string{}
+	return nil
 }
 
 func (u *UserConnection) shutdown() {
@@ -55,7 +69,7 @@ func (u *UserConnection) shutdown() {
 }
 
 func (u *UserConnection) loop() {
-	u.SendColor(IntroString())
+	u.SendColor(IntroString(), "red")
 	u.Send("Hello, " + u.playerID)
 	u.Prompt()
 	defer u.shutdown()
@@ -80,7 +94,7 @@ func (u *UserConnection) loop() {
 		}
 		event, err := parseEvent(data)
 		if err != nil {
-			u.messages <- err.Error()
+			u.fastSend(err.Error())
 			continue
 		}
 		event.Source = u.playerID
@@ -93,18 +107,40 @@ func (u *UserConnection) loop() {
 	}
 }
 
+// send a line to the user's TCP connection.
+func (u *UserConnection) send(line string) error {
+	_, err := u.conn.Write([]byte(line))
+	return err
+}
+
+// Send
 func (u *UserConnection) Send(line string) error {
-	_, err := u.conn.Write([]byte(line + "\n"))
-	return err
+	u.mu.Lock()
+	u.outMessages = append(u.outMessages, line+"\n")
+	u.mu.Unlock()
+	return nil
 }
 
-func (u *UserConnection) SendColor(line string) error {
-	line = fmt.Sprintf("%s%s%s", "\x1b[31m", line, "\x1b[0m")
-	_, err := u.conn.Write([]byte(line + "\n"))
-	return err
+// SendColor will send the given line with the specified color. If the color does not exist
+// it is the same as calling Send(line). The following colors are supported:
+// black, red, green, yellow, blue, magenta, cyan, and white.
+func (u *UserConnection) SendColor(line string, color string) error {
+	// TODO: Add strongly typed strings
+	colors := map[string]string{
+		"black":   "\x1b[30m",
+		"red":     "\x1b[31m",
+		"green":   "\x1b[32m",
+		"yellow":  "\x1b[33m",
+		"blue":    "\x1b[34m",
+		"magenta": "\x1b[35m",
+		"cyan":    "\x1b[36m",
+		"white":   "\x1b[37m",
+	}
+	line = fmt.Sprintf("%s%s%s", colors[strings.ToLower(color)], line, "\x1b[0m")
+	return u.Send(line)
 }
 
+// Prompt renders the prompt that the user will see.
 func (u *UserConnection) Prompt() error {
-	_, err := u.conn.Write([]byte(">"))
-	return err
+	return u.send(">")
 }
