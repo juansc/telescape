@@ -70,10 +70,10 @@ type Item struct {
 	Description
 }
 
-func NewBlunt() Item {
+func NewLever() Item {
 	return Item{
-		shortName:   "blunt",
-		Description: describe("The blunt is is still lit. It gives off a great aroma!"),
+		shortName:   "lever",
+		Description: describe("A lever made of milky, smooth marble."),
 	}
 }
 
@@ -85,7 +85,7 @@ func NewFountainRoom() Room {
 			"To the north is the only exit.",
 		),
 		Locations: []Location{NewFountainLocation()},
-		Items:     []Item{NewBlunt()},
+		Items:     []Item{NewLever()},
 	}
 }
 

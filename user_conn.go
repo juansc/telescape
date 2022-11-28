@@ -56,7 +56,6 @@ func (u *UserConnection) FlushMessages() error {
 		// TODO: Handle errors here
 		u.send(msg)
 	}
-	u.Prompt()
 	u.outMessages = []string{}
 	return nil
 }
@@ -71,7 +70,6 @@ func (u *UserConnection) shutdown() {
 func (u *UserConnection) loop() {
 	u.SendColor(IntroString(), "red")
 	u.Send("Hello, " + u.playerID)
-	u.Prompt()
 	defer u.shutdown()
 	r := bufio.NewReader(u.conn)
 	for {
@@ -89,7 +87,6 @@ func (u *UserConnection) loop() {
 		data = strings.TrimSpace(data)
 		// If the user sent only white space then just render the prompt again
 		if data == "" {
-			u.Prompt()
 			continue
 		}
 		event, err := parseEvent(data)
