@@ -1,5 +1,3 @@
-1. Add support for basic chatting. We're almost done, but we need to remove the functionality that renders the prompts
-   since we assume that they'll be using Mudlet.
 2. Add support for movement across rooms. This means that a player can have a current room. They can see the rooms available
    via movement (this should live in the room description) and they can attempt to update their room by specifying a movement.
    Note that it is only required to move into a room that exists and fail to move to a room that doesn't exist or the player 
